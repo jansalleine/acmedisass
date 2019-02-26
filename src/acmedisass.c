@@ -474,6 +474,7 @@ int main( int argc, char *argv[] )
 
     assembly = read_file( infile_name, skipbytes );
     pc = get_pc( infile_name, skipbytes );
+    pc_start = pc;
 
     pc_end = pc_start + assembly.length;
 
@@ -645,7 +646,7 @@ void print_bits( unsigned int x )
 {
     int i;
 
-    for( i = ( sizeof( int ) * 8 ) - 1; i >= 0; i-- )
+    for ( i = ( sizeof( int ) * 8 ) - 1; i >= 0; i-- )
             ( x & ( 1u << i ) ) ? putchar( '1' ) : putchar( '0' );
 
     printf( "\n" );
