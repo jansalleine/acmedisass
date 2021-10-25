@@ -21,12 +21,12 @@ enum {
     INDX,
     INDY,
     REL
-};
+}; // addressing modes
 
 enum {
     MODE6502,
     MODE6510
-};
+}; // cpu modes (6510 includes 'illegal' opcodes)
 
 opcode opcodes[] = {
     [0x69]{ "adc", 2, 2, IMM },
@@ -239,9 +239,9 @@ opcode opcodes[] = {
     [0x09]{ "ora", 2, 2, IMM },
     [0x05]{ "ora", 2, 3, ZP },
     [0x15]{ "ora", 2, 4, ZPX },
-    [0x0D]{ "ora", 2, 4, ABS },
-    [0x1D]{ "ora", 2, 4, ABSX },
-    [0x19]{ "ora", 2, 4, ABSY },
+    [0x0D]{ "ora", 3, 4, ABS },
+    [0x1D]{ "ora", 3, 4, ABSX },
+    [0x19]{ "ora", 3, 4, ABSY },
     [0x01]{ "ora", 2, 6, INDX },
     [0x11]{ "ora", 2, 5, INDY },
 
@@ -394,242 +394,493 @@ int opcodes6510[] = {
     0xE8,0xE9,0xEA,0xEB,0xEC,0xED,0xEE,0xF0,0xF1,0xF5,0xF6,0xF8,0xF9,0xFD,0xFE          // C
 };
 
-int main( int argc, char *argv[] )
+enum {
+    DATATYPE_DATA,
+    DATATYPE_CODE,
+    DATATYPE_CODE_END,
+    DATATYPE_MISMATCH
+}; // datatypes data and code
+
+int datamap[0xFFFF] = { DATATYPE_DATA };
+
+int valid_jumps[] = {
+    0xEA31,
+    0xEA81,
+    0xFCE2
+};
+
+int main(int argc, char *argv[])
 {
     char    *infile_name        = NULL;
     char    *infile_nopath      = NULL;
-    char    *temp_string        = NULL;
+    // char    *temp_string        = NULL;
 
     int     c                   = 0;
     opcode  *current_opcode;
     int     i                   = 0;
-    int     intend              = DEFAULT_INTEND;
+    int     indent              = DEFAULT_INDENT;
     int     mode                = MODE6502;
     int     skipbytes           = 2;
     int     pc_end              = 0;
     int     pc_start            = 0x0801;
     int     pc                  = 0x0801;
+    int     bytes_count         = 0;
+    int     bytes_per_row       = 8;
 
     virtual_file assembly;
 
-    if ( ( argc == 1 ) ||
-         ( strcmp( argv[1], "-h" ) == 0 ) ||
-         ( strcmp( argv[1], "-help" ) == 0 ) ||
-         ( strcmp( argv[1], "-?" ) == 0 ) ||
-         ( strcmp( argv[1], "--help" ) == 0 ) )
+    if ((argc == 1) ||
+        (strcmp(argv[1], "-h") == 0) ||
+        (strcmp(argv[1], "-help") == 0) ||
+        (strcmp(argv[1], "-?") == 0) ||
+        (strcmp(argv[1], "--help") == 0))
     {
         print_info();
         print_help();
-        exit( EXIT_SUCCESS );
+        exit(EXIT_SUCCESS);
     }
 
     // getopt cmdline-argument handler
     opterr = 1;
 
-    while ( ( c = getopt ( argc, argv, "m:s:" ) ) != -1 )
+    while ((c = getopt (argc, argv, "m:s:")) != -1)
     {
-        switch ( c )
+        switch (c)
         {
-            case 'm':
-                if ( sscanf( optarg, "%i", &mode) != 1 )
-                {
-                    printf( "\nError: -m needs an integer value for file offset\n" );
-                    exit( EXIT_FAILURE );
-                }
-                if ( mode > 1 )
-                {
-                    printf( "\nError: -m illegal mode\n" );
-                    exit( EXIT_FAILURE );
-                }
-                break;
-            case 's':
-                if ( sscanf( optarg, "%i", &skipbytes) != 1 )
-                {
-                    printf( "\nError: -s needs an integer value for file offset\n" );
-                    exit( EXIT_FAILURE );
-                }
-                if ( skipbytes < 2 )
-                {
-                    printf( "\nError: -s must be at least 2 to calculate program counter\n" );
-                    exit( EXIT_FAILURE );
-                }
-                break;
+        case 'm':
+            if (sscanf(optarg, "%i", &mode) != 1)
+            {
+                printf("\nError: -m needs an integer value for file offset\n");
+                exit(EXIT_FAILURE);
+            }
+            if (mode > 1)
+            {
+                printf("\nError: -m illegal mode\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 's':
+            if (sscanf(optarg, "%i", &skipbytes) != 1)
+            {
+                printf("\nError: -s needs an integer value for file offset\n");
+                exit(EXIT_FAILURE);
+            }
+            if (skipbytes < 2)
+            {
+                printf("\nError: -s must be at least 2 to calculate program counter\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
         }
     }
 
     // make sure a file was given
-    if ( ( optind ) == argc )
+    if ((optind) == argc)
     {
-        printf( "\nError: no file specified.\n" );
-        exit( EXIT_FAILURE );
+        printf("\nError: no file specified.\n");
+        exit(EXIT_FAILURE);
     }
 
     // open files
-    infile_name = newstr( argv[optind] );
-    infile_nopath = basename( infile_name );
+    infile_name = newstr(argv[optind]);
+    infile_nopath = basename(infile_name);
 
-    printf( "; input filename:    %s\n", infile_nopath );
-    printf( "; skip bytes:        %d\n", skipbytes );
-    printf( "\n" );
+    printf("; input filename:    %s\n", infile_nopath);
+    printf("; skip bytes:        %d\n", skipbytes);
+    printf("\n");
 
-    assembly = read_file( infile_name, skipbytes );
-    pc = get_pc( infile_name, skipbytes );
+    assembly = read_file(infile_name, skipbytes);
+    pc = get_pc(infile_name, skipbytes);
     pc_start = pc;
 
     pc_end = pc_start + assembly.length;
 
-    print_intend( intend );
-    print_mode( mode );
+    create_datamap(assembly, mode, pc_start, pc_end);
 
-    print_intend( intend );
-    printf( "*= 0x%04x \n", pc );
+    print_indent(indent);
+    print_mode(mode);
+    printf("\n");
 
-    while ( pc < pc_end )
+    print_indent(indent);
+    printf("*= 0x%04x \n", pc);
+
+    while (pc < pc_end)
     {
         i = pc - pc_start;
-        current_opcode = &opcodes[ assembly.data[i] ];
+        current_opcode = &opcodes[assembly.data[i]];
 
-        print_intend( intend );
-
-        if ( is_in( assembly.data[i], mode ) )
+        if (is_in_mode(assembly.data[i], mode) && datamap[pc] != DATATYPE_DATA)
         {
+            print_indent(indent);
+
             int bytes = current_opcode->bytes;
             int operand = 0x0000;
 
-            switch ( current_opcode->addressing_mode )
+            switch (current_opcode->addressing_mode)
             {
-                case ACC:
-                case IMP:
-                default:
-                    break;
-                case IMM:
-                case ZP:
-                case ZPX:
-                case ZPY:
-                case INDX:
-                case INDY:
-                    operand = assembly.data[i+1];
-                    break;
-                case ABS:
-                case ABSI:
-                case ABSX:
-                case ABSY:
-                    operand = ( assembly.data[i+1] ) + ( assembly.data[i+2] << 8 );
-                    break;
-                case REL:
-                    if ( assembly.data[i+1] < 0x80 )
-                    {
-                        operand = pc + ( assembly.data[i+1] ) + 2;
-                    }
-                    else
-                    {
-                        operand = pc - ( 0x100 - assembly.data[i+1] ) + 2;
-                    }
-                    break;
+            case ACC:
+            case IMP:
+            default:
+                break;
+            case IMM:
+            case ZP:
+            case ZPX:
+            case ZPY:
+            case INDX:
+            case INDY:
+                operand = assembly.data[i+1];
+                break;
+            case ABS:
+            case ABSI:
+            case ABSX:
+            case ABSY:
+                operand = (assembly.data[i+1]) + (assembly.data[i+2] << 8);
+                break;
+            case REL:
+                if (assembly.data[i+1] < 0x80)
+                {
+                    operand = pc + (assembly.data[i+1]) + 2;
+                }
+                else
+                {
+                    operand = pc - (0x100 - assembly.data[i+1]) + 2;
+                }
+                break;
             }
 
-            print_instruction( *current_opcode, operand );
+            print_instruction(*current_opcode, operand);
+            // printf("        ; pc $%04X", pc);
+            printf("\n");
 
             pc += bytes;
         }
         else
         {
-            printf( "!byte 0x%02x", assembly.data[i] );
+            if (datamap[pc-1] != DATATYPE_DATA || pc == pc_start)
+            {
+                printf("pc%04X:\n", pc);
+                print_indent(indent);
+                printf("!byte");
+                bytes_count = 0;
+            }
+
+            if (datamap[pc+1] == DATATYPE_CODE || datamap[pc+1] == DATATYPE_CODE_END || bytes_count == (bytes_per_row - 1))
+            {
+                printf(" 0x%02x\n", assembly.data[i]);
+                if (datamap[pc+1] == DATATYPE_DATA)
+                {
+                    print_indent(indent);
+                    printf("!byte");
+                }
+                else
+                {
+                    printf("pc%04X:\n", pc+1);
+                }
+                bytes_count = 0;
+            }
+            else
+            {
+                if (pc == (pc_end - 1))
+                {
+                    printf(" 0x%02x\n", assembly.data[i]);
+                }
+                else
+                {
+                    printf(" 0x%02x,", assembly.data[i]);
+                }
+                bytes_count++;
+            }
             pc++;
         }
-        printf( "\n" );
     };
-    printf( "\n" );
+    printf("\n");
 
-    free( infile_name );
-    exit( EXIT_SUCCESS );
+    free(infile_name);
+    exit(EXIT_SUCCESS);
+}
+
+/* =============================================================================
+ * code detection idea(s):
+ *
+ * assumption 1:    all code blocks will most likely end with
+ *                  rts         (0x60)
+ *                  jmp 0xHILO  (0x4c 0xLO 0xHI)
+ *
+ * assuption 2:     in case of jmp HI and LO will most likely be
+ *
+ *                  a)  an address 0xHILO within the range between pc_start and
+ *                      pc_end
+ *
+ *                  b)  one of the typical IRQ end addresses:
+ *                          0xEA31
+ *                          0xEA81
+ *                      or jump to reset:
+ *                          0xFCE2
+ *
+ *                  c)  an address 0xHILO within the range 0xE000 - 0xFFFF
+ *                      (KERNAL ROM)
+ *
+ *                  d)  an address 0xHILO within the range 0xA000 - 0xBFFF
+ *                      (BASIC ROM)
+ *
+ *                  e)  if pc_end > 0xA000 c) is very unlikely
+ *
+ *
+ *      step 1:     all code is DATATYPE_DATA by default
+ *
+ *      step 2:     find rts (0x60) and jmp (0x4C) codes in the assembly data
+ *
+ *      step 2b:    in case of jmp check the 0xHILO address according to
+ *                  assumption 2
+ *                  cases a) and b) should always be considered
+ *                  maybe add a command line switch if KERNAL or BASIC ROM jumps
+ *                  should be considered (?)
+ *
+ *      step 3:     mark the findings as DATATYPE_CODE_END in the datamap
+ *
+ *      step 4:     do one "normal" disassembly run and if the datamap is
+ *                  not = DATATYPE_CODE_END
+ *                  set DATATYPE_CODE in case of assumed "code"
+ *
+ *                  beware of the case that operand is DATATYPE_CODE_END
+ *                  if that's the case the current code chunk could be
+ *                  misaligned
+ *
+ *      step 5:     go through the resulting datamap again
+ *                  mark beginning of blocks with DATATYPE_CODE
+ *                  if it doesn't END with DATATYPE_CODE_END
+ *                  go back and set everything to DATATYPE_DATA
+ *
+ *      step 6:     skip code output in the main loop when datamap is set to
+ *                  DATATYPE_DATA
+ * =============================================================================
+ */
+
+void create_datamap(virtual_file assembly, int mode, int pc_start, int pc_end)
+{
+    int i;
+    int address;
+    int pc = pc_start;
+
+    // step 2 + 3
+    for (i = 0; i < (pc_end - pc_start); i++)
+    {
+        if (assembly.data[i] == 0x60)
+        {
+            datamap[pc] = DATATYPE_CODE_END;
+        }
+        else if (assembly.data[i] == 0x4C)
+        {
+            // step 2b
+            address = ((assembly.data[i+1]) + (assembly.data[i+2] << 8)) && 0xFFFF;
+
+            if (address >= pc_start && address < pc_end)
+            {
+                datamap[pc] = DATATYPE_CODE_END;
+            }
+            else if (is_in_array(address, valid_jumps, sizeof(valid_jumps)))
+            {
+                datamap[pc] = DATATYPE_CODE_END;
+            }
+        }
+
+        pc++;
+    }
+
+    // step 4
+    pc = pc_start;
+    opcode *current_opcode;
+
+    while (pc < pc_end)
+    {
+        i = pc - pc_start;
+        current_opcode = &opcodes[assembly.data[i]];
+
+        if (is_in_mode(assembly.data[i], mode) && datamap[pc] != DATATYPE_CODE_END)
+        {
+            int bytes = current_opcode->bytes;
+
+            switch (current_opcode->addressing_mode)
+            {
+            case ACC:
+            case IMP:
+            default:
+                datamap[pc] = DATATYPE_CODE;
+                break;
+            case IMM:
+            case ZP:
+            case ZPX:
+            case ZPY:
+            case INDX:
+            case INDY:
+                datamap[pc] = DATATYPE_CODE;
+                datamap[pc+1] = DATATYPE_CODE;
+                break;
+            case ABS:
+            case ABSI:
+            case ABSX:
+            case ABSY:
+                datamap[pc] = DATATYPE_CODE;
+                datamap[pc+1] = DATATYPE_CODE;
+                datamap[pc+2] = DATATYPE_CODE;
+                break;
+            case REL:
+                datamap[pc] = DATATYPE_CODE;
+                datamap[pc+1] = DATATYPE_CODE;
+                break;
+            }
+            pc += bytes;
+        }
+        else
+        {
+            if (datamap[pc] != DATATYPE_CODE_END)
+            {
+                datamap[pc] = DATATYPE_DATA;
+            }
+            else
+            {
+                if (assembly.data[i] == 0x4C)
+                {
+                    datamap[pc+1] = DATATYPE_CODE_END;
+                    datamap[pc+2] = DATATYPE_CODE_END;
+                    pc += 2;
+                }
+            }
+            pc++;
+        }
+    };
+
+    // step 5
+    pc = pc_start;
+    int codeblock_start = 0;
+    int j;
+
+    for (i = 0; i < (pc_end - pc_start); i++)
+    {
+        if (datamap[pc] == DATATYPE_CODE && !codeblock_start)
+        {
+            codeblock_start = pc;
+        }
+
+        if (datamap[pc] == DATATYPE_DATA && codeblock_start)
+        {
+            for (j = codeblock_start; j < pc; j++)
+            {
+                datamap[j] = DATATYPE_DATA;
+            }
+        }
+
+        if (datamap[pc] == DATATYPE_CODE_END)
+        {
+            codeblock_start = 0;
+
+            if (assembly.data[pc - pc_start] == 0x4C)
+            {
+                pc += 2;
+            }
+        }
+
+        pc++;
+    }
 }
 
 // file reader
 
-virtual_file read_file( char *filename, int skipbytes )
+virtual_file read_file(char *filename, int skipbytes)
 {
     FILE    *infile             = NULL;
     int     i                   = 0;
     int     input_data          = 0;
     virtual_file vfile;
 
-    infile = fopen( filename, "rb" );
-    if ( infile == NULL )
+    infile = fopen(filename, "rb");
+    if (infile == NULL)
     {
-        printf( "\nError: couldn't read file \"%s\".\n", filename );
-        exit( EXIT_FAILURE );
+        printf("\nError: couldn't read file \"%s\".\n", filename);
+        exit(EXIT_FAILURE);
     }
 
     // forward infile according to skipbytes
-    fseek( infile, skipbytes, 0 );
+    fseek(infile, skipbytes, 0);
 
-    while  ( ( input_data = fgetc( infile ) ) != EOF )
+    while  ((input_data = fgetc(infile)) != EOF)
     {
         vfile.data[i] = input_data;
         i++;
     }
     vfile.length = i;
 
-    strcpy ( vfile.name, filename );
+    strcpy (vfile.name, filename);
 
-    fclose( infile );
+    fclose(infile);
     return vfile;
 }
 
 // helper
 
-int get_pc( char *filename, int skipbytes )
+int get_pc(char *filename, int skipbytes)
 {
     FILE    *infile             = NULL;
     int     lobyte              = 0x00;
     int     hibyte              = 0x00;
     int     pc                  = 0x0801;
 
-    infile = fopen( filename, "rb" );
-    if ( infile == NULL )
+    infile = fopen(filename, "rb");
+    if (infile == NULL)
     {
-        printf( "\nError: couldn't read file \"%s\".\n", filename );
-        exit( EXIT_FAILURE );
+        printf("\nError: couldn't read file \"%s\".\n", filename);
+        exit(EXIT_FAILURE);
     }
 
     // forward infile according to skipbytes
-    if ( skipbytes > 2 )
+    if (skipbytes > 2)
     {
-        fseek( infile, skipbytes - 2, 0 );
+        fseek(infile, skipbytes - 2, 0);
     }
 
-    lobyte = fgetc( infile );
-    hibyte = fgetc( infile );
+    lobyte = fgetc(infile);
+    hibyte = fgetc(infile);
 
-    fclose( infile );
+    fclose(infile);
 
-    pc = ( lobyte + ( hibyte << 8 ) ) & 0xFFFF;
+    pc = (lobyte + (hibyte << 8)) & 0xFFFF;
 
     return pc;
 }
 
-int is_in( int opcode, int mode )
+int is_in_array(int needle, int haystack[], int haystack_len)
+{
+    int i;
+
+    for (i = 0; i < haystack_len; i++)
+    {
+        if (haystack[i] == needle) return 1;
+    }
+
+    return 0;
+}
+
+int is_in_mode(int opcode, int mode)
 {
     int i           = 0;
     int bool_val    = 0;
 
-    switch ( mode )
+    switch (mode)
     {
         case MODE6502:
         default:
-            for ( i = 0; i < 0x97; i++ )
+            for (i = 1; i < 0x97; i++)
             {
-                if ( opcode == opcodes6502[i] )
+                if (opcode == opcodes6502[i])
                 {
                     bool_val = 1;
                 }
             }
             break;
         case MODE6510:
-            for ( i = 0; i < 0xCF; i++ )
+            for (i = 0; i < 0xCF; i++)
             {
-                if ( opcode == opcodes6510[i] )
+                if (opcode == opcodes6510[i])
                 {
                     bool_val = 1;
                 }
@@ -642,112 +893,112 @@ int is_in( int opcode, int mode )
 
 // print functions
 
-void print_bits( unsigned int x )
+void print_bits(unsigned int x)
 {
     int i;
 
-    for ( i = ( sizeof( int ) * 8 ) - 1; i >= 0; i-- )
-            ( x & ( 1u << i ) ) ? putchar( '1' ) : putchar( '0' );
+    for (i = (sizeof(int) * 8) - 1; i >= 0; i--)
+            (x & (1u << i)) ? putchar('1') : putchar('0');
 
-    printf( "\n" );
+    printf("\n");
 }
 
-void print_mode( int mode )
+void print_mode(int mode)
 {
-    switch ( mode )
+    switch (mode)
     {
         case MODE6502:
         default:
-            printf( "!cpu 6502" );
+            printf("!cpu 6502");
             break;
         case MODE6510:
-            printf( "!cpu 6510" );
+            printf("!cpu 6510");
             break;
     }
 
-    printf( "\n" );
+    printf("\n");
 }
 
-void print_instruction( opcode opcode, int operand )
+void print_instruction(opcode opcode, int operand)
 {
     int lobyte  = 0x00;
     int hibyte  = 0x00;
 
     lobyte = operand & 0xFF;
 
-    if ( operand > 0xFF )
+    if (operand > 0xFF)
     {
-        hibyte = ( operand & 0xFF00 ) >> 8;
+        hibyte = (operand & 0xFF00) >> 8;
     }
 
-    printf( "%s", opcode.name );
+    printf("%s", opcode.name);
 
-    switch ( opcode.addressing_mode )
+    switch (opcode.addressing_mode)
     {
         case ACC:
-            // printf( "a" );
+            // printf("a");
             break;
         case IMP:
             break;
         case IMM:
-            printf( " #0x%02x", lobyte );
+            printf(" #0x%02x", lobyte);
             break;
         case ZP:
-            printf( " 0x%02x", lobyte );
+            printf(" 0x%02x", lobyte);
             break;
         case ZPX:
-            printf( " 0x%02x,x", lobyte );
+            printf(" 0x%02x,x", lobyte);
             break;
         case ZPY:
-            printf( " 0x%02x,y", lobyte );
+            printf(" 0x%02x,y", lobyte);
             break;
         case ABS:
-            printf( " 0x%02x%02x", hibyte, lobyte );
+            printf(" 0x%02x%02x", hibyte, lobyte);
             break;
         case ABSI:
-            printf( " (0x%02x%02x)", hibyte, lobyte );
+            printf(" (0x%02x%02x)", hibyte, lobyte);
             break;
         case ABSX:
-            printf( " 0x%02x%02x,x", hibyte, lobyte );
+            printf(" 0x%02x%02x,x", hibyte, lobyte);
             break;
         case ABSY:
-            printf( " 0x%02x%02x,y", hibyte, lobyte );
+            printf(" 0x%02x%02x,y", hibyte, lobyte);
             break;
         case INDX:
-            printf( " (0x%02x,x)", lobyte );
+            printf(" (0x%02x,x)", lobyte);
             break;
         case INDY:
-            printf( " (0x%02x),y", lobyte );
+            printf(" (0x%02x),y", lobyte);
             break;
         case REL:
-            printf( " 0x%02x%02x", hibyte, lobyte );
+            printf(" 0x%02x%02x", hibyte, lobyte);
             break;
         default:
             break;
     }
-    // printf( "\n" );
+    // printf("\n");
 }
 
-void print_intend( int n )
+void print_indent(int n)
 {
     int i = 0;
-    for ( i = 0; i < n; i++ )
+    for (i = 0; i < n; i++)
     {
-        printf( " " );
+        printf(" ");
     }
 }
 
 // string helper functions
 
-char *newstr( char *initial_str )
+char *newstr(char *initial_str)
 {
     int     num_chars;
     char    *new_str;
 
-    num_chars = strlen( initial_str ) + 1;
-    new_str = malloc ( num_chars );
+    num_chars = strlen(initial_str) + 1;
+    new_str = malloc (num_chars);
 
-    strcpy ( new_str, initial_str );
+    strcpy (new_str, initial_str);
 
     return new_str;
 }
@@ -758,31 +1009,31 @@ void print_info()
 {
     const char* version = VERSION;
 
-    printf( "===============================================================================\n" );
-    printf( "acmedisass - Version %s\n", version );
-    printf( "                                                            by Spider Jerusalem\n");
-    printf( "===============================================================================\n" );
-    printf( "Very simple 6502/6510 disassembler that outputs sourcecode for the acme\n" );
-    printf( "crossassembler by Marco Baye. \n" );
-    printf( "\n" );
+    printf("===============================================================================\n");
+    printf("acmedisass - Version %s\n", version);
+    printf("                                                            by Spider Jerusalem\n");
+    printf("===============================================================================\n");
+    printf("Very simple 6502/6510 disassembler that outputs sourcecode for the acme\n");
+    printf("crossassembler by Marco Baye. \n");
+    printf("\n");
 }
 
 void print_help()
 {
-    printf( "Usage:\n" );
-    printf( "======\n" );
-    printf( "   acmedisass [options] {file}\n" );
-    printf( "\n" );
+    printf("Usage:\n");
+    printf("======\n");
+    printf("   acmedisass [options] {file}\n");
+    printf("\n");
 
-  //printf( "===============================================================================\n" );
-    printf( "Command line options:\n" );
-    printf( "=====================\n" );
-    printf( "   -m mode    : acme cpu mode. 0 : !cpu 6502, 1 : !cpu 6510\n" );
-    printf( "                [default: 0]\n" );
-    printf( "   -s skip    : number of bytes to be skipped.\n" );
-    printf( "                low-/highbyte combination in ( skipbytes - 2 )\n" );
-    printf( "                will be used for initial program counter.\n" );
-    printf( "                [default: 2]\n" );
-    printf( "\n" );
-    printf( "Have fun!\n" );
+  //printf("===============================================================================\n");
+    printf("Command line options:\n");
+    printf("=====================\n");
+    printf("   -m mode    : acme cpu mode. 0 : !cpu 6502, 1 : !cpu 6510\n");
+    printf("                [default: 0]\n");
+    printf("   -s skip    : number of bytes to be skipped.\n");
+    printf("                low-/highbyte combination in (skipbytes - 2)\n");
+    printf("                will be used for initial program counter.\n");
+    printf("                [default: 2]\n");
+    printf("\n");
+    printf("Have fun!\n");
 }

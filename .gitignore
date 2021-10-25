@@ -1,3 +1,5 @@
 *.asm
 *.prg
 *.PRG
+src/acmedisass
+src/acmedisass.o
