@@ -377,6 +377,12 @@ int opcodes6502[] = {
     0xF1,0xF5,0xF6,0xF8,0xF9,0xFD,0xFE                                                  // 9
 };
 
+/* TODO:
+ * update opcodes6510[]
+ * was taken from aay64, but acme won't be able to compile all of them when set
+ * to !cpu 6510
+ */
+
 int opcodes6510[] = {
     // 0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
     0x00,0x01,0x02,0x03,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0D,0x0E,0x0F,0x10,0x11,    // 0
@@ -625,6 +631,13 @@ int main(int argc, char *argv[])
  *
  *                  e)  if pc_end > 0xA000 c) is very unlikely
  *
+ *                  f)  if 0xHILO points to an address that is not code it's
+ *                      probably:
+ *
+ *                      f1) if 0xHILO > 0: not code, but data
+ *
+ *                      f2) if 0xHILO = 0: could be a jump to generated code
+ *
  *
  *      step 1:     all code is DATATYPE_DATA by default
  *
@@ -782,10 +795,20 @@ void create_datamap(virtual_file assembly, int mode, int pc_start, int pc_end)
 
         pc++;
     }
+
+    // step 6 in main output loop
 }
 
-// file reader
-
+/* =============================================================================
+ * virtual_file read_file(char *filename, int skipbytes)
+ * return vfile;
+ *
+ * reads a file into memory as "virtual_file" that includes:
+ *      filename
+ *      array of data
+ *      filelength
+ * =============================================================================
+ */
 virtual_file read_file(char *filename, int skipbytes)
 {
     FILE    *infile             = NULL;
@@ -810,14 +833,20 @@ virtual_file read_file(char *filename, int skipbytes)
     }
     vfile.length = i;
 
-    strcpy (vfile.name, filename);
+    strcpy(vfile.name, filename);
 
     fclose(infile);
     return vfile;
 }
 
-// helper
-
+/* =============================================================================
+ * int get_pc(char *filename, int skipbytes)
+ * return pc;
+ *
+ * gets two bytes from a file named "filename" and returns the
+ * program counter according to those bytes
+ * =============================================================================
+ */
 int get_pc(char *filename, int skipbytes)
 {
     FILE    *infile             = NULL;
@@ -848,6 +877,15 @@ int get_pc(char *filename, int skipbytes)
     return pc;
 }
 
+/* =============================================================================
+ * int is_in_array(int needle, int haystack[], int haystack_len)
+ *
+ * return 0; // if needle not found in haystack array
+ * return 1; // if needle was found in haystack array
+ *
+ * everything has to be type int
+ * =============================================================================
+ */
 int is_in_array(int needle, int haystack[], int haystack_len)
 {
     int i;
@@ -860,10 +898,16 @@ int is_in_array(int needle, int haystack[], int haystack_len)
     return 0;
 }
 
+/* =============================================================================
+ * int is_in_mode(int opcode, int mode)
+ *
+ * return 0; // if opcode not found in mode
+ * return 1; // if opcode was found in mode
+ * =============================================================================
+ */
 int is_in_mode(int opcode, int mode)
 {
-    int i           = 0;
-    int bool_val    = 0;
+    int i;
 
     switch (mode)
     {
@@ -873,7 +917,7 @@ int is_in_mode(int opcode, int mode)
         {
             if (opcode == opcodes6502[i])
             {
-                bool_val = 1;
+                return 1;
             }
         }
         break;
@@ -882,17 +926,19 @@ int is_in_mode(int opcode, int mode)
         {
             if (opcode == opcodes6510[i])
             {
-                bool_val = 1;
+                return 1;
             }
         }
         break;
     }
 
-    return bool_val;
+    return 0;
 }
 
-// print functions
-
+/* =============================================================================
+ * void print_bits(unsigned int x)
+ * =============================================================================
+ */
 void print_bits(unsigned int x)
 {
     int i;
@@ -903,6 +949,12 @@ void print_bits(unsigned int x)
     printf("\n");
 }
 
+/* =============================================================================
+ * void print_mode(int mode)
+ *
+ * print acme cpu pseudo-op according to mode
+ * =============================================================================
+ */
 void print_mode(int mode)
 {
     switch (mode)
@@ -919,6 +971,12 @@ void print_mode(int mode)
     printf("\n");
 }
 
+/* =============================================================================
+ * void print_instruction(opcode opcode, int operand)
+ *
+ * print cpu instruction
+ * =============================================================================
+ */
 void print_instruction(opcode opcode, int operand)
 {
     int lobyte  = 0x00;
@@ -979,6 +1037,12 @@ void print_instruction(opcode opcode, int operand)
     // printf("\n");
 }
 
+/* =============================================================================
+ * void print_indent(int n)
+ *
+ * print n spaces as indentation
+ * =============================================================================
+ */
 void print_indent(int n)
 {
     int i = 0;
@@ -988,23 +1052,10 @@ void print_indent(int n)
     }
 }
 
-// string helper functions
-
-char *newstr(char *initial_str)
-{
-    int     num_chars;
-    char    *new_str;
-
-    num_chars = strlen(initial_str) + 1;
-    new_str = malloc (num_chars);
-
-    strcpy (new_str, initial_str);
-
-    return new_str;
-}
-
-// info print stuff
-
+/* =============================================================================
+ * void print_info()
+ * =============================================================================
+ */
 void print_info()
 {
     const char* version = VERSION;
@@ -1018,6 +1069,10 @@ void print_info()
     printf("\n");
 }
 
+/* =============================================================================
+ * void print_help()
+ * =============================================================================
+ */
 void print_help()
 {
     printf("Usage:\n");
@@ -1036,4 +1091,23 @@ void print_help()
     printf("                [default: 2]\n");
     printf("\n");
     printf("Have fun!\n");
+}
+
+/* =============================================================================
+ * char *newstr(char *initial_str)
+ *
+ * return new_str;
+ * =============================================================================
+ */
+char *newstr(char *initial_str)
+{
+    int     num_chars;
+    char    *new_str;
+
+    num_chars = strlen(initial_str) + 1;
+    new_str = malloc (num_chars);
+
+    strcpy (new_str, initial_str);
+
+    return new_str;
 }
