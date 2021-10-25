@@ -672,9 +672,9 @@ void create_datamap(virtual_file assembly, int mode, int pc_start, int pc_end)
         else if (assembly.data[i] == 0x4C)
         {
             // step 2b
-            address = ((assembly.data[i+1]) + (assembly.data[i+2] << 8)) && 0xFFFF;
+            address = ((assembly.data[i+1]) + (assembly.data[i+2] << 8));
 
-            if (address >= pc_start && address < pc_end)
+            if ((address >= pc_start) && (address < pc_end))
             {
                 datamap[pc] = DATATYPE_CODE_END;
             }
@@ -867,25 +867,25 @@ int is_in_mode(int opcode, int mode)
 
     switch (mode)
     {
-        case MODE6502:
-        default:
-            for (i = 1; i < 0x97; i++)
+    case MODE6502:
+    default:
+        for (i = 1; i < 0x97; i++)
+        {
+            if (opcode == opcodes6502[i])
             {
-                if (opcode == opcodes6502[i])
-                {
-                    bool_val = 1;
-                }
+                bool_val = 1;
             }
-            break;
-        case MODE6510:
-            for (i = 0; i < 0xCF; i++)
+        }
+        break;
+    case MODE6510:
+        for (i = 1; i < 0xCF; i++)
+        {
+            if (opcode == opcodes6510[i])
             {
-                if (opcode == opcodes6510[i])
-                {
-                    bool_val = 1;
-                }
+                bool_val = 1;
             }
-            break;
+        }
+        break;
     }
 
     return bool_val;
