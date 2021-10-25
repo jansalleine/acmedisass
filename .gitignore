@@ -3,3 +3,4 @@
 *.PRG
 src/acmedisass
 src/acmedisass.o
+bin/acmedisass
