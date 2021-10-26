@@ -20,7 +20,16 @@ typedef struct
     int addressing_mode;
 } opcode;
 
-void create_datamap(virtual_file assembly, int mode, int pc_start, int pc_end);
+typedef struct
+{
+    int pc_start;
+    int pc_end;     // make sure to set this to pc *after* the last instruction
+    int type;       // DATATYPE_DATA or DATATYPE_CODE
+} datablock;
+
+void create_datamap(int mode, int pc_start, int pc_end);
+void create_labelmap(int mode, int pc_start, int pc_end);
+void fill_datablocks(int pc_start, int pc_end);
 virtual_file read_file(char *filename, int skipbytes);
 int is_in_array(int needle, int haystack[], int haystack_len);
 int is_in_mode(int opcode, int mode);

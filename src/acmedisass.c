@@ -403,8 +403,7 @@ int opcodes6510[] = {
 enum {
     DATATYPE_DATA,
     DATATYPE_CODE,
-    DATATYPE_CODE_END,
-    DATATYPE_MISMATCH
+    DATATYPE_CODE_END
 }; // datatypes data and code
 
 int datamap[0xFFFF] = { DATATYPE_DATA };
@@ -414,6 +413,16 @@ int valid_jumps[] = {
     0xEA81,
     0xFCE2
 };
+
+int labelmap[0xFFFF] = { 0 };
+
+datablock codeblocks[0xFFFF];
+int codeblocks_max_index = 0;
+
+datablock datablocks[0xFFFF];
+int datablocks_max_index = 0;
+
+virtual_file assembly;
 
 int main(int argc, char *argv[])
 {
@@ -432,8 +441,6 @@ int main(int argc, char *argv[])
     int     pc                  = 0x0801;
     int     bytes_count         = 0;
     int     bytes_per_row       = 8;
-
-    virtual_file assembly;
 
     if ((argc == 1) ||
         (strcmp(argv[1], "-h") == 0) ||
@@ -501,7 +508,9 @@ int main(int argc, char *argv[])
 
     pc_end = pc_start + assembly.length;
 
-    create_datamap(assembly, mode, pc_start, pc_end);
+    create_datamap(mode, pc_start, pc_end);
+
+    fill_datablocks(pc_start, pc_end);
 
     print_indent(indent);
     print_mode(mode);
@@ -669,7 +678,7 @@ int main(int argc, char *argv[])
  * =============================================================================
  */
 
-void create_datamap(virtual_file assembly, int mode, int pc_start, int pc_end)
+void create_datamap(int mode, int pc_start, int pc_end)
 {
     int i;
     int address;
@@ -797,6 +806,117 @@ void create_datamap(virtual_file assembly, int mode, int pc_start, int pc_end)
     }
 
     // step 6 in main output loop
+}
+
+/* =============================================================================
+ * labelmap concept
+ *
+ *      1.) less is more
+ *          don't flood the disassembly with labels like other disass tools
+ *
+ *      2.) do not differentiate between label "types", so that the labelmap is
+ *          just a simple int array representing the C64 memory with 0 = nolabel
+ *          and 1 = label
+ *
+ *          every label for jmp and jsr should be:
+ *              pcHILO:
+ *
+ *          if there are load / store references to an address that would not
+ *          be at the beginning of the line in dissassembly (self modification)
+ *          keep the labels "in order", i.e:
+ *              pcC0DE:
+ *              pcC0DF = *+1
+ *                          lda #0x00
+ *              pcC0E0:
+ *              pcC0E1 = *+1
+ *              pcC0E2 = *+2
+ *                          sta 0xD020
+ *
+ *      3.) don't set direct labels for load / store references that are inside
+ *          a DATATYPE_DATA block
+ *          instead parse the load / store command target addresses relative to
+ *          the beginning of the DATATYPE_DATA block, i.e.
+ *                          lda pc1234+3
+ *                          sta pc1234+2
+ *                          [...]
+ *          pc1234:             ; +0    +1    +2    +3    +4    +5
+ *                          !byte 0x00, 0x00, 0xDD, 0xCC, 0x00, 0x00
+ *
+ *      4.) keep branches (type REL) simple:
+ *          only use *-X and *+X if target address is not reference elsewhere
+ *
+ *      5.) no autolabels in zeropage
+ *          (maybe only if it's crystal clear to be a pointer)
+ *
+ *      6.) no labels beyond pc_end to keep calls to KERNAL / BASIC "pure"
+ * =============================================================================
+ */
+void create_labelmap(int mode, int pc_start, int pc_end)
+{
+
+}
+
+/* =============================================================================
+ * void fill_datablocks(int pc_start, int pc_end)
+ * =============================================================================
+ */
+void fill_datablocks(int pc_start, int pc_end)
+{
+    int i;
+    datablock last_block = { 0, 0, -1 };
+    // datablock current_block;
+    int last_blocktype = -1;
+    int current_blocktype;
+
+    for (i = pc_start; i < pc_end; i++)
+    {
+        current_blocktype = datamap[i] == DATATYPE_CODE_END ? DATATYPE_CODE : datamap[i];
+
+        if (current_blocktype != last_blocktype)
+        {
+            last_block.pc_end = i;
+
+            if (last_block.type == DATATYPE_DATA)
+            {
+                datablocks[datablocks_max_index] = last_block;
+                datablocks_max_index++;
+            }
+            else if (last_block.type == DATATYPE_CODE)
+            {
+                codeblocks[codeblocks_max_index] = last_block;
+                codeblocks_max_index++;
+            }
+
+            last_block.pc_start = i;
+            last_block.pc_end = 0;
+            last_block.type = current_blocktype;
+        }
+
+        last_blocktype = current_blocktype;
+    }
+
+    // test output
+    /*
+    for (i = 0; i < codeblocks_max_index; i++)
+    {
+        printf("; codeblocks[%03i] 0x%04X - 0x%04X type: %i\n",
+            i,
+            codeblocks[i].pc_start,
+            codeblocks[i].pc_end,
+            codeblocks[i].type
+        );
+    }
+
+    for (i = 0; i < datablocks_max_index; i++)
+    {
+        printf("; datablocks[%03i] 0x%04X - 0x%04X type: %i\n",
+            i,
+            datablocks[i].pc_start,
+            datablocks[i].pc_end,
+            datablocks[i].type
+        );
+    }
+    */
 }
 
 /* =============================================================================
