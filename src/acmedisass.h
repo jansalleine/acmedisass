@@ -27,19 +27,20 @@ typedef struct
     int type;       // DATATYPE_DATA or DATATYPE_CODE
 } datablock;
 
-void create_datamap(int mode, int pc_start, int pc_end);
-void create_labelmap(int mode, int pc_start, int pc_end);
-void fill_datablocks(int pc_start, int pc_end);
-virtual_file read_file(char *filename, int skipbytes);
-int is_in_array(int needle, int haystack[], int haystack_len);
-int is_in_mode(int opcode, int mode);
+void create_datamap();
+void create_labelmap();
+void fill_datablocks();
 int get_pc(char *filename, int skipbytes);
-char *newstr(char *initial_str);
+int is_in_array(int needle, int haystack[], int haystack_len);
+int is_in_mode(int opcode);
 void print_bits(unsigned int x);
-void print_instruction(opcode opcode, int operand);
-void print_mode(int mode);
-void print_indent(int n);
-void print_info();
+void print_disassembly();
 void print_help();
+void print_indent();
+void print_info();
+void print_instruction(opcode opcode, int operand, int pc);
+void print_mode();
+char *newstr(char *initial_str);
+virtual_file read_file(char *filename, int skipbytes);
 
 #endif // ACMEDISASS_H_
